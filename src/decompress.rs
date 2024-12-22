@@ -74,6 +74,56 @@ impl Decompressor {
         Ok(DecompressHeader { width, height, subsamp, colorspace })
     }
 
+    /// Read the JPEG header without decompressing the image, unlike 
+    /// [`read_header()`](Decompressor::read_header), this method does not 
+    /// return the header. This allows it to be used in reading table data.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // read JPEG header data from file
+    /// let header_data = std::fs::read("examples/parrots_tables.jpg")?;
+    /// let jpeg_data = std::fs::read("examples/parrots_no_tables.jpg")?;
+    ///
+    /// // initialize a decompressor
+    /// let mut decompressor = turbojpeg::Decompressor::new()?;
+    ///
+    /// // read the JPEG header
+    /// decompressor.decompress_header(&header_data)?;
+    ///
+    /// // read the JPEG header
+    /// let header = decompressor.read_header(&jpeg_data)?;
+    ///
+    /// // initialize the image (Image<Vec<u8>>)
+    /// let mut image = turbojpeg::Image {
+    ///     pixels: vec![0; 4 * header.width * header.height],
+    ///     width: header.width,
+    ///     pitch: 4 * header.width, // size of one image row in memory
+    ///     height: header.height,
+    ///     format: turbojpeg::PixelFormat::RGBA,
+    /// };
+    ///
+    /// // decompress the JPEG into the image
+    /// // (we use as_deref_mut() to convert from &mut Image<Vec<u8>> into Image<&mut [u8]>)
+    /// decompressor.decompress(&jpeg_data, image.as_deref_mut())?;
+    /// assert_eq!(&image.pixels[0..4], &[122, 118, 89, 255]);
+    ///
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[doc(alias = "tj3DecompressHeader")]
+    pub fn decompress_header(&mut self, jpeg_data: &[u8]) -> Result<()> {
+        let jpeg_data_len = jpeg_data.len().try_into()
+            .map_err(|_| Error::IntegerOverflow("jpeg_data.len()"))?;
+        let res = unsafe {
+            raw::tj3DecompressHeader(self.handle.as_ptr(), jpeg_data.as_ptr(), jpeg_data_len)
+        };
+        if res != 0 {
+            return Err(self.handle.get_error())
+        }
+
+        Ok(())
+    }
+
     /// Decompress a JPEG image in `jpeg_data` into `output`.
     ///
     /// The decompressed image is stored in the pixel data of the given `output` image, which must
